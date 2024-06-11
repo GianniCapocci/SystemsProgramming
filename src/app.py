@@ -1,28 +1,26 @@
-import os
 from flask import Flask, request, jsonify
 from pydantic import ValidationError
 from schemas import User, Coupon, Event
-from recommenders import randomRecommender, frequencyRecommender
 from flaskext.mysql import MySQL
 from pymysql.cursors import DictCursor
-import db_util
+from database import db_config
 from kafka import KafkaConsumer
 from kafka import KafkaProducer
 from kafka import KafkaAdmin
+from src.database import db_util
+from src.recommenders import wrapperRecommender as recommender
 
 app = Flask(__name__)
 
 mysql = MySQL(cursorclass=DictCursor)
-app.config['MYSQL_DATABASE_USER'] = 'root'
-app.config['MYSQL_DATABASE_PASSWORD'] = ''
-app.config['MYSQL_DATABASE_DB'] = 'test'
-app.config['MYSQL_DATABASE_HOST'] = 'localhost'
+app.config['MYSQL_DATABASE_USER'] = db_config.user
+app.config['MYSQL_DATABASE_PASSWORD'] = db_config.password
+app.config['MYSQL_DATABASE_DB'] = db_config.dbname
+app.config['MYSQL_DATABASE_HOST'] = db_config.host
 mysql.init_app(app)
 
 conn = mysql.connect()
 cursor = conn.cursor()
-
-kafka_bootstrap_servers = os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'localhost:9092')
 
 consumer_users = KafkaConsumer('users')
 consumer_events = KafkaConsumer('events')
@@ -41,7 +39,7 @@ admin = KafkaAdmin()
 def register_user():
     try:
         user = User(**request.json)
-        db_util.db_register_user(user)
+        db_util.db_register_user(user, conn, cursor)
         return jsonify(user.dict()), 200
     except ValidationError as e:
         return jsonify(e.errors()), 400
@@ -51,7 +49,7 @@ def register_user():
 def register_coupon():
     try:
         coupon = Coupon(**request.json)
-        db_util.db_register_coupon(coupon)
+        db_util.db_register_coupon(coupon, conn, cursor)
         return jsonify(coupon.dict()), 200
     except ValidationError as e:
         return jsonify(e.errors()), 400
@@ -61,33 +59,24 @@ def register_coupon():
 def register_event():
     try:
         event = Event(**request.json)
-        db_util.db_register_event(event)
+        db_util.db_register_event(event, conn, cursor)
         return jsonify(event.dict()), 200
     except ValidationError as e:
         return jsonify(e.errors()), 400
 
 
-@app.route('/recommendations', methods=['GET'])
-def recommendations():
-    try:
-        recommendation = randomRecommender()
-        return jsonify(recommendation.dict()), 200
-    except ValidationError as e:
-        return jsonify(e.errors()), 400
-
-
-@app.route('/recommend_events', methods=['GET'])
-def recommend_events():
+@app.route('/recommend', methods=['GET'])
+def recommend():
     user_id = request.args.get('user_id')
     n = request.args.get('n')
-    if not user_id:
+    if user_id:
+        try:
+            return recommender.wrapperRecommender(user_id, n, cursor)
+        except ValidationError as e:
+            print(e)
+            return jsonify(e.errors()), 400
+    else:
         return jsonify({"error": "User ID is required"}), 400
-
-    recommendations = frequencyRecommender(user_id, n, cursor)
-    if not recommendations:
-        return jsonify({"error": "No recommendations found or user does not exist"}), 404
-
-    return jsonify([recommendation.dict() for recommendation in recommendations]), 200
 
 
 @app.route('/users', methods=['GET'])

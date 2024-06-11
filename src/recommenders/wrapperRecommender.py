@@ -1,32 +1,17 @@
-def generalRecommender(user_id: str) -> List[Dict]:
-    conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
-
-    cursor.execute("SELECT * FROM users WHERE user_id = %s", (user_id,))
-    user = cursor.fetchone()
-    if not user:
-        return {"error": "User not found"}
-
-    cursor.execute("SELECT * FROM coupons WHERE user_id = %s", (user_id,))
-    coupons = cursor.fetchall()
-
-    cursor.close()
-    conn.close()
-
-    if coupons:
-        return frequencyRecommender(user_id)
-    else:
-        return randomRecommender(Event)
+from src.database import db_util
+from src.recommenders.frequencyRecommender import frequencyRecommender as freqRecommender
+from src.recommenders.randomRecommender import randomRecommender as randRecommender
 
 
-@app.route('/generate_recommendation', methods=['GET'])
-def generate_recommendation():
-    user_id = request.args.get('user_id')
-    if not user_id:
-        return jsonify({"error": "User ID is required"}), 400
-
+def wrapperRecommender(user_id: str, n, cursor):
     try:
-        recommendation = generalRecommender(user_id)
-        return jsonify(recommendation), 200
-    except ValidationError as e:
-        return jsonify(e.errors()), 400
+        user = db_util.findUser(user_id, cursor)
+        if user is not None:
+            events = db_util.findSimilarEvents()
+            if events >= n:
+                return freqRecommender(user_id, n, cursor)
+            else:
+                return randRecommender()
+    except Exception as e:
+        print(f"Exception from wrapperRecommender: {e}")
+        return None

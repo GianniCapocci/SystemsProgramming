@@ -12,7 +12,7 @@ A simple recommendation system that provides personalized recommendations.
 - Kafka Producers: Translate incoming data into messages and publish them to specific topics in Apache Kafka.
 
 ### Diagram of the System Architecture:
-![System Architecture](diagram/Systems Programming.jpg)
+![Architecture](diagram/App_Architecture.jpg)
 
 ### Data Processing with Kafka and MySQL:
 

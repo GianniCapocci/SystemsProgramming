@@ -1,4 +1,2 @@
-/src/start.sh
-/src/requirements2.txt
-/src/requirements.txt
-/src/database/db_config.py
+/requirements.in
+/.env

@@ -3,15 +3,14 @@ from src.recommenders.frequencyRecommender import frequencyRecommender as freqRe
 from src.recommenders.randomRecommender import randomRecommender as randRecommender
 
 
-def wrapperRecommender(user_id: str, n, cursor):
+def wrapperRecommender(user_id: str, n: int, session):
     try:
-        user = db_util.findUser(user_id, cursor)
+        user = db_util.findUser(user_id, session)
         if user is not None:
-            events = db_util.findSimilarEvents()
-            if events >= n:
-                return freqRecommender(user_id, n, cursor)
+            if n >= 0:
+                return freqRecommender(user_id, n, session)
             else:
                 return randRecommender()
     except Exception as e:
         print(f"Exception from wrapperRecommender: {e}")
-        return None
+        return []

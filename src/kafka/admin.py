@@ -1,18 +1,22 @@
 from confluent_kafka.admin import AdminClient, NewTopic
-from src.kafka.config import kafka_config
 
 
-class KafkaAdmin:
-    def __init__(self):
-        self.admin_client = AdminClient(kafka_config)
+def create_kafka_topics(bootstrap_servers, topics, num_partitions=1, replication_factor=1):
+    admin_client = AdminClient({'bootstrap.servers': bootstrap_servers})
 
-    def create_topic(self, topic_name, num_partitions=1, replication_factor=1):
-        new_topic = [NewTopic(topic_name, num_partitions=num_partitions, replication_factor=replication_factor)]
-        fs = self.admin_client.create_topics(new_topic)
+    existing_topics = admin_client.list_topics(timeout=10).topics
 
-        for topic, f in fs.items():
+    new_topics = [NewTopic(topic, num_partitions=num_partitions, replication_factor=replication_factor)
+                  for topic in topics if topic not in existing_topics]
+
+    if new_topics:
+        futures = admin_client.create_topics(new_topics)
+
+        for topic, future in futures.items():
             try:
-                f.result()
-                print(f"Topic {topic} created successfully")
+                future.result()
+                print(f"Topic {topic} created")
             except Exception as e:
                 print(f"Failed to create topic {topic}: {e}")
+    else:
+        print("No new topics to create")

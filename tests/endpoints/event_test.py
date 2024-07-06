@@ -1,14 +1,15 @@
 import requests
+
 from tests.conftest import base_url
 
 
 def test_register_event(base_url):
     url = f'{base_url}/register_event'
     data = {
-        "begin_timestamp": "2023-05-17",
-        "country": "USA",
-        "end_timestamp": "2023-05-18",
         "event_id": "test_event_1",
+        "begin_timestamp": "2023-05-17",
+        "end_timestamp": "2023-05-18",
+        "country": "USA",
         "league": "Test League",
         "participants": ["Team A", "Team B"],
         "sport": "Test"

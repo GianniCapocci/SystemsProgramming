@@ -1,127 +1,99 @@
+import json
+import os
+
+from confluent_kafka import Producer as KafkaProducer
+from dotenv import load_dotenv
 from flask import Flask, request, jsonify
-from pydantic import ValidationError
-from schemas import User, Coupon, Event
-from flaskext.mysql import MySQL
-from pymysql.cursors import DictCursor
-from database import db_config
-from kafka import KafkaConsumer
-from kafka import KafkaProducer
-from kafka import KafkaAdmin
-from src.database import db_util
+from jsonschema import validate
+from jsonschema.exceptions import ValidationError
+from sqlalchemy.orm import scoped_session, sessionmaker
+
+from src.database.database import db
+from src.kafka.admin import create_kafka_topics
 from src.recommenders import wrapperRecommender as recommender
+from src.schemas import user_schema, event_schema, coupon_schema
 
 app = Flask(__name__)
+load_dotenv()
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv("SQLALCHEMY_DATABASE_URI")
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db.init_app(app)
 
-mysql = MySQL(cursorclass=DictCursor)
-app.config['MYSQL_DATABASE_USER'] = db_config.user
-app.config['MYSQL_DATABASE_PASSWORD'] = db_config.password
-app.config['MYSQL_DATABASE_DB'] = db_config.dbname
-app.config['MYSQL_DATABASE_HOST'] = db_config.host
-mysql.init_app(app)
+with app.app_context():
+    db.create_all()
+    Session = scoped_session(sessionmaker(bind=db.engine))
 
-conn = mysql.connect()
-cursor = conn.cursor()
+bootstrap_servers = os.getenv("KAFKA_BOOTSTRAP_SERVERS")
+topics = ['user_topic', 'event_topic', 'coupon_topic']
 
-consumer_users = KafkaConsumer('users')
-consumer_events = KafkaConsumer('events')
-consumer_coupons = KafkaConsumer('coupons')
+create_kafka_topics(bootstrap_servers, topics)
 
-consumer_users.start()
-consumer_events.start()
-consumer_coupons.start()
+producer_config = {
+    'bootstrap.servers': bootstrap_servers
+}
 
-producer = KafkaProducer()
-
-admin = KafkaAdmin()
+producer = KafkaProducer(producer_config)
 
 
 @app.route('/register_user', methods=['POST'])
 def register_user():
     try:
-        user = User(**request.json)
-        db_util.db_register_user(user, conn, cursor)
-        return jsonify(user.dict()), 200
+        print("inside register_user")
+        user = request.json
+        validate(instance=user, schema=user_schema)
+        serialized_user = json.dumps(user).encode('utf-8')
+        producer.produce('user_topic', value=serialized_user)
+        return jsonify(user), 200
     except ValidationError as e:
-        return jsonify(e.errors()), 400
+        error_message = {'error': e.message}
+        return jsonify(error_message), 400
 
 
 @app.route('/register_coupon', methods=['POST'])
 def register_coupon():
     try:
-        coupon = Coupon(**request.json)
-        db_util.db_register_coupon(coupon, conn, cursor)
-        return jsonify(coupon.dict()), 200
+        coupon = request.json
+        validate(instance=coupon, schema=coupon_schema)
+        serialized_coupon = json.dumps(coupon).encode('utf-8')
+        producer.produce('coupon_topic', value=serialized_coupon)
+        return jsonify(coupon), 200
     except ValidationError as e:
-        return jsonify(e.errors()), 400
+        error_message = {'error': e.message}
+        return jsonify(error_message), 400
 
 
 @app.route('/register_event', methods=['POST'])
 def register_event():
     try:
-        event = Event(**request.json)
-        db_util.db_register_event(event, conn, cursor)
-        return jsonify(event.dict()), 200
+        event = request.json
+        validate(instance=event, schema=event_schema)
+        serialized_event = json.dumps(event).encode('utf-8')
+        producer.produce('event_topic', value=serialized_event)
+        return jsonify(event), 200
     except ValidationError as e:
-        return jsonify(e.errors()), 400
+        error_message = {'error': e.message}
+        return jsonify(error_message), 400
 
 
+# If n == 0 it means the user wants all the available similar events recommended
+# If n > 0 it means the user wants n similar events recommended
+# If n == -1 it means the user wants a random recommendation
 @app.route('/recommend', methods=['GET'])
 def recommend():
-    user_id = request.args.get('user_id')
-    n = request.args.get('n')
+    try:
+        user_id = str(request.args.get('user_id'))
+        n = int(request.args.get('n', -1))
+    except ValueError as e:
+        return jsonify({'error': 'Invalid parameter type. user_id and n must be integers.'}, {str(e)}), 400
     if user_id:
         try:
-            return recommender.wrapperRecommender(user_id, n, cursor)
-        except ValidationError as e:
-            print(e)
-            return jsonify(e.errors()), 400
+            result = recommender(user_id, n, Session)
+            return jsonify(result), 200
+        except Exception as e:
+            return jsonify({'error': f'{str(e)}'}), 400
     else:
         return jsonify({"error": "User ID is required"}), 400
 
 
-@app.route('/users', methods=['GET'])
-def get_messages_users():
-    return jsonify(consumer_users.get_messages())
-
-
-@app.route('/events', methods=['GET'])
-def get_messages_events():
-    return jsonify(consumer_events.get_messages())
-
-
-@app.route('/coupons', methods=['GET'])
-def get_messages_coupons():
-    return jsonify(consumer_coupons.get_messages())
-
-
-@app.route('/produce', methods=['POST'])
-def produce_message():
-    topic = request.json.get('topic')
-    message = request.json.get('message')
-    if not message:
-        return jsonify({'error': 'Message is required'}), 400
-    producer.produce_message(topic, message)
-    print(message)
-    return jsonify({'status': 'Message produced'}), 200
-
-
-@app.route('/create_topic', methods=['POST'])
-def create_topic():
-    topic_name = request.json.get('topic_name')
-    if not topic_name:
-        return jsonify({'error': 'Topic name is required'}), 400
-    try:
-        admin.create_topic(topic_name)
-        return jsonify({'status': f'Topic {topic_name} created successfully'}), 200
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/')
-def index():
-    producer.send('users', b'Hello, Kafka!')
-    return 'Message sent to Kafka!'
-
-
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=5000)

@@ -1,5 +1,3 @@
-from .user import User
-from .coupon import Coupon
-from .event import Event
-
-__all__ = ['User', 'Coupon', 'Event']
+from .couponSchema import coupon_schema
+from .eventSchema import event_schema
+from .userSchema import user_schema

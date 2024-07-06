@@ -1,4 +1,5 @@
 import requests
+
 from tests.conftest import base_url
 
 
@@ -10,8 +11,8 @@ def test_register_coupon(base_url):
         "stake": 50.5,
         "timestamp": "2023-05-17",
         "selections": [
-            {"event_id": "test_event_1", "stake": 10.0},
-            {"event_id": "test_event_2", "stake": 20.0}
+            {"event_id": "test_event_1", "odds": 10.0},
+            {"event_id": "test_event_2", "odds": 20.0}
         ]
     }
     response = requests.post(url, json=data)

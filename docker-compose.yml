@@ -6,7 +6,6 @@ services:
     environment:
       - FLASK_APP=src.app.py
       - FLASK_RUN_HOST=0.0.0.0
-#      - SQLALCHEMY_DATABASE_URI=mysql://root:rootpass@mysql_db/systems_programming
     ports:
       - "8080:8080"
     depends_on:

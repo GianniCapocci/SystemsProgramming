@@ -38,7 +38,6 @@ producer = KafkaProducer(producer_config)
 @app.route('/register_user', methods=['POST'])
 def register_user():
     try:
-        print("inside register_user")
         user = request.json
         validate(instance=user, schema=user_schema)
         serialized_user = json.dumps(user).encode('utf-8')

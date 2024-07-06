@@ -94,7 +94,7 @@ def getUserEvents(user_id: str, session: Session) -> List[dict]:
         return [event.__dict__ for event in events]
 
     except Exception as e:
-        print(e)
+        print(f"Exception: {e}")
         return []
 
 
